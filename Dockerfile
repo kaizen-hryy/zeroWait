@@ -17,13 +17,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends libsqlite3-0 &&
 COPY --from=build /app/build ./build
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./
+COPY --from=build /app/src/lib/db/schema.sql ./src/lib/db/schema.sql
 
 # SQLite data lives here — mount as a volume
-RUN mkdir -p /app/data
+RUN mkdir -p /app/data && chmod 777 /app/data
 
 ENV NODE_ENV=production
-ENV PORT=3000
+ENV PORT=3333
 ENV HOST=0.0.0.0
-EXPOSE 3000
+EXPOSE 3333
 
 CMD ["node", "build"]

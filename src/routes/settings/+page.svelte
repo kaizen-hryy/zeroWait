@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import Dropdown from '$lib/components/Dropdown.svelte';
 
 	let { data } = $props();
 
@@ -101,12 +102,15 @@
 		<p class="description">
 			All departure times and schedules use this timezone. Defaults to your server's timezone.
 		</p>
-		<div class="setting-row">
-			<select bind:value={selectedTimezone} class="tz-select">
-				{#each data.timezones as tz}
-					<option value={tz}>{tz}</option>
-				{/each}
-			</select>
+		<div class="setting-row tz-row">
+			<div class="tz-dropdown">
+				<Dropdown
+					options={data.timezones.map((tz) => ({ value: tz, label: tz }))}
+					selected={selectedTimezone}
+					onSelect={(v) => { selectedTimezone = v; }}
+					searchable
+				/>
+			</div>
 			<button class="btn btn-primary btn-sm" onclick={saveTimezone}>
 				{timezoneSaved ? 'Saved!' : 'Save'}
 			</button>
@@ -210,7 +214,8 @@
 	.btn-primary:hover { background: var(--accent-hover); }
 	.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
-	.tz-select { flex: 1; min-width: 0; }
+	.tz-dropdown { flex: 1; min-width: 0; }
+	.tz-row { align-items: flex-start; }
 
 	.result { font-size: var(--text-sm); margin-top: var(--space-md); color: var(--status-urgent); }
 	.result.success { color: var(--status-safe); }

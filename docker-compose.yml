@@ -4,12 +4,12 @@ services:
     container_name: zerowait
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3333:3333"
     volumes:
       - ./data:/app/data
     environment:
       - NODE_ENV=production
-      - PORT=3000
+      - PORT=3333
       - HOST=0.0.0.0
       # Optional: restrict GTFS import endpoint
       # - IMPORT_SECRET=your-secret-here

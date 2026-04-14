@@ -1,11 +1,9 @@
 import Database from 'better-sqlite3';
 import { readFileSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 import { mkdirSync } from 'fs';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const SCHEMA_PATH = join(__dirname, 'schema.sql');
+const SCHEMA_PATH = join(process.cwd(), 'src', 'lib', 'db', 'schema.sql');
 const DB_DIR = join(process.cwd(), 'data');
 const DB_PATH = join(DB_DIR, 'zerowait.db');
 

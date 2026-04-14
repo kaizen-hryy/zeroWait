@@ -11,21 +11,35 @@
 		options: Option[];
 		selected: string;
 		onSelect: (value: string) => void;
+		searchable?: boolean;
 	}
 
-	let { options, selected, onSelect }: Props = $props();
+	let { options, selected, onSelect, searchable = false }: Props = $props();
 
 	let open = $state(false);
+	let search = $state('');
+	let searchInput = $state<HTMLInputElement>();
 	let dropdownEl: HTMLDivElement;
 
 	let selectedOption = $derived(options.find((o) => o.value === selected) ?? options[0]);
+	let filteredOptions = $derived(
+		search
+			? options.filter((o) => o.label.toLowerCase().includes(search.toLowerCase()))
+			: options
+	);
 
 	function toggle() {
 		open = !open;
+		search = '';
+		if (open && searchable) {
+			// tick() equivalent - focus after DOM update
+			requestAnimationFrame(() => searchInput?.focus());
+		}
 	}
 
 	function select(value: string) {
 		open = false;
+		search = '';
 		onSelect(value);
 	}
 
@@ -54,7 +68,18 @@
 
 	{#if open}
 		<div class="menu">
-			{#each options as opt}
+			{#if searchable}
+				<div class="search-box">
+					<input
+						bind:this={searchInput}
+						type="text"
+						class="search-input"
+						placeholder="Type to filter..."
+						bind:value={search}
+					/>
+				</div>
+			{/if}
+			{#each filteredOptions as opt}
 				<button
 					class="menu-item"
 					class:active={opt.value === selected}
@@ -69,6 +94,9 @@
 					{/if}
 				</button>
 			{/each}
+			{#if searchable && search && filteredOptions.length === 0}
+				<div class="no-results">No matches</div>
+			{/if}
 		</div>
 	{/if}
 </div>
@@ -138,7 +166,8 @@
 		border-radius: var(--radius-md);
 		box-shadow: var(--shadow-elevated);
 		z-index: 30;
-		overflow: hidden;
+		max-height: 240px;
+		overflow-y: auto;
 	}
 
 	.menu-item {
@@ -176,5 +205,40 @@
 		font-size: var(--text-xs);
 		color: var(--accent);
 		flex-shrink: 0;
+	}
+
+	.search-box {
+		position: sticky;
+		top: 0;
+		background: var(--bg-card);
+		padding: var(--space-sm);
+		border-bottom: 1px solid var(--border-subtle);
+	}
+
+	.search-input {
+		width: 100%;
+		padding: var(--space-sm) var(--space-md);
+		background: var(--bg-elevated);
+		border: 1px solid var(--border-default);
+		border-radius: var(--radius-sm);
+		color: var(--text-primary);
+		font-family: var(--font-sans);
+		font-size: var(--text-sm);
+	}
+
+	.search-input::placeholder {
+		color: var(--text-muted);
+	}
+
+	.search-input:focus {
+		outline: none;
+		border-color: var(--accent);
+	}
+
+	.no-results {
+		padding: var(--space-md) var(--space-lg);
+		font-size: var(--text-sm);
+		color: var(--text-muted);
+		text-align: center;
 	}
 </style>

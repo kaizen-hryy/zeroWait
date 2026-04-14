@@ -260,12 +260,8 @@
 		goto('/trip');
 	}
 
-	async function setActiveView(value: string) {
-		await fetch('/api/view', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ activeView: value })
-		});
+	function setActiveView(value: string) {
+		document.cookie = `activeView=${encodeURIComponent(value)};path=/;max-age=${60 * 60 * 24 * 365};samesite=lax`;
 		window.location.href = '/';
 	}
 

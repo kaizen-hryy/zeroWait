@@ -15,7 +15,7 @@ cd zerowait
 docker compose up -d --build
 ```
 
-The app is now running at `http://<your-server-ip>:3000`.
+The app is now running at `http://<your-server-ip>:3333`.
 
 ## First Run
 
@@ -41,7 +41,7 @@ Environment variables can be set in `docker-compose.yml` under `environment`:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` | `3000` | Server port |
+| `PORT` | `3333` | Server port |
 | `HOST` | `0.0.0.0` | Bind address |
 | `IMPORT_SECRET` | _(none)_ | If set, the GTFS import API requires this value in the `x-import-secret` header |
 
@@ -56,7 +56,7 @@ Your data in `./data/` is preserved across rebuilds.
 
 ## Exposing via Tailscale
 
-If your homelab runs Tailscale, the app is accessible at `http://<tailscale-hostname>:3000` from any device on your tailnet. No reverse proxy or port forwarding needed.
+If your homelab runs Tailscale, the app is accessible at `http://<tailscale-hostname>:3333` from any device on your tailnet. No reverse proxy or port forwarding needed.
 
 ## Exposing via Reverse Proxy (Optional)
 
@@ -64,7 +64,7 @@ If you want HTTPS or a custom domain, put a reverse proxy in front of the app. E
 
 ```
 zerowait.yourdomain.com {
-    reverse_proxy localhost:3000
+    reverse_proxy localhost:3333
 }
 ```
 

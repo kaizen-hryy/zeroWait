@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.1.0 — Docker Fixes, Searchable Dropdowns & View Switching
+
+### 3.1.0
+- Default port changed from 3000 to 3333 (Dockerfile, docker-compose, docs)
+- Fixed Docker production crash: schema.sql now copied into production image
+- Fixed DB path resolution using process.cwd() instead of __dirname (works in both dev and Docker)
+- Fixed data directory permissions in Dockerfile (chmod 777)
+- Alight stop selector in profile editor now uses custom Dropdown instead of native select
+- Dropdown component: searchable filter mode with sticky search input and auto-focus
+- Timezone selector in Settings replaced with searchable custom Dropdown
+- Dropdown menu now scrollable (max-height: 240px) for long option lists
+- Fixed profile/group switching on homepage — was POSTing to nonexistent /api/view, now sets cookie directly
+
 ## 3.0.0 — Reliability, Animations & UX
 
 ### 3.0.0

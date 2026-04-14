@@ -330,15 +330,15 @@
 					{#if destStopOptions[destKey]?.length}
 						<div class="field">
 							<label class="label">Alight at</label>
-							<select
-								value={destSearches[key] ?? ''}
-								onchange={(e) => selectDestStop(key, (e.target as HTMLSelectElement).value, transit)}
-							>
-								<option value="" disabled>Select destination stop...</option>
-								{#each destStopOptions[destKey] as stop}
-									<option value={stop.stop_id}>{stop.stop_name}</option>
-								{/each}
-							</select>
+							<Dropdown
+								options={[
+									{ value: '', label: 'Select destination stop...' },
+									...destStopOptions[destKey].map((stop) => ({ value: stop.stop_id, label: stop.stop_name }))
+								]}
+								selected={destSearches[key] ?? ''}
+								onSelect={(v) => { if (v) selectDestStop(key, v, transit); }}
+								searchable
+							/>
 						</div>
 					{/if}
 
