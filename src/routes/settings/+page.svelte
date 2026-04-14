@@ -68,6 +68,119 @@
 		}
 		importing = false;
 	}
+
+	// --- Backup ---
+	let dailyBackupEnabled = $state(data.dailyBackupEnabled);
+	let backups = $state(data.backups);
+	let backupMsg = $state<string | null>(null);
+	let backupMsgType = $state<'success' | 'error'>('success');
+	let restoring = $state(false);
+
+	async function toggleDailyBackup() {
+		dailyBackupEnabled = !dailyBackupEnabled;
+		await fetch('/api/settings', {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ daily_backup_enabled: String(dailyBackupEnabled) })
+		});
+	}
+
+	async function downloadBackup() {
+		const res = await fetch('/api/backup');
+		const backup = await res.json();
+		const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `zerowait-backup-${new Date().toISOString().split('T')[0]}.json`;
+		a.click();
+		URL.revokeObjectURL(url);
+	}
+
+	async function uploadRestore(e: Event) {
+		const input = e.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+
+		restoring = true;
+		backupMsg = null;
+		try {
+			const text = await file.text();
+			const data = JSON.parse(text);
+			const res = await fetch('/api/backup', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(data)
+			});
+			const result = await res.json();
+			if (result.success) {
+				backupMsg = `Restored ${result.profiles} profiles and ${result.groups} groups.`;
+				backupMsgType = 'success';
+			} else {
+				backupMsg = `Error: ${result.error}`;
+				backupMsgType = 'error';
+			}
+		} catch (err) {
+			backupMsg = `Error: ${err}`;
+			backupMsgType = 'error';
+		}
+		restoring = false;
+		input.value = '';
+	}
+
+	async function backupNow() {
+		backupMsg = null;
+		try {
+			const res = await fetch('/api/backup/list', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'backup-now' })
+			});
+			const result = await res.json();
+			if (result.success) {
+				backupMsg = `Backup saved: ${result.filename}`;
+				backupMsgType = 'success';
+				await refreshBackupList();
+			}
+		} catch (err) {
+			backupMsg = `Error: ${err}`;
+			backupMsgType = 'error';
+		}
+	}
+
+	async function restoreFromServer(filename: string) {
+		restoring = true;
+		backupMsg = null;
+		try {
+			const res = await fetch('/api/backup/list', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'restore', filename })
+			});
+			const result = await res.json();
+			if (result.success) {
+				backupMsg = `Restored ${result.profiles} profiles and ${result.groups} groups from ${filename}.`;
+				backupMsgType = 'success';
+			} else {
+				backupMsg = `Error: ${result.error}`;
+				backupMsgType = 'error';
+			}
+		} catch (err) {
+			backupMsg = `Error: ${err}`;
+			backupMsgType = 'error';
+		}
+		restoring = false;
+	}
+
+	async function refreshBackupList() {
+		const res = await fetch('/api/backup/list');
+		backups = await res.json();
+	}
+
+	function formatBytes(bytes: number): string {
+		if (bytes < 1024) return `${bytes} B`;
+		return `${(bytes / 1024).toFixed(1)} KB`;
+	}
 </script>
 
 <div class="page">
@@ -127,6 +240,55 @@
 		</button>
 		{#if importResult}
 			<p class="result" class:success={importResult.startsWith('Import')}>{importResult}</p>
+		{/if}
+	</div>
+
+	<div class="section">
+		<h3 class="section-title">Backup & Restore</h3>
+		<p class="description">
+			Download a backup of your profiles, groups, and settings. Restore from a backup file to recover your data.
+		</p>
+
+		<div class="backup-actions">
+			<button class="btn btn-primary btn-sm" onclick={downloadBackup}>Download Backup</button>
+			<label class="btn btn-secondary btn-sm upload-label">
+				{restoring ? 'Restoring...' : 'Restore from File'}
+				<input type="file" accept=".json" onchange={uploadRestore} hidden disabled={restoring} />
+			</label>
+		</div>
+
+		{#if backupMsg}
+			<p class="result" class:success={backupMsgType === 'success'}>{backupMsg}</p>
+		{/if}
+
+		<div class="backup-toggle">
+			<label class="toggle-row">
+				<input type="checkbox" checked={dailyBackupEnabled} onchange={toggleDailyBackup} />
+				<span class="toggle-label">Daily automatic backup</span>
+			</label>
+			<p class="toggle-hint">Saves a backup every day at 4:00 AM. Keeps the last 7 days.</p>
+		</div>
+
+		{#if dailyBackupEnabled}
+			<div class="backup-list-header">
+				<span class="backup-list-title">Saved Backups</span>
+				<button class="btn-link" onclick={backupNow}>Backup now</button>
+			</div>
+			{#if backups.length > 0}
+				<div class="backup-list">
+					{#each backups as b (b.filename)}
+						<div class="backup-item">
+							<div class="backup-info">
+								<span class="backup-name">{b.filename}</span>
+								<span class="backup-meta">{formatBytes(b.size)}</span>
+							</div>
+							<button class="btn-link" onclick={() => restoreFromServer(b.filename)} disabled={restoring}>Restore</button>
+						</div>
+					{/each}
+				</div>
+			{:else}
+				<p class="no-backups">No backups yet. The first one will run at 4:00 AM.</p>
+			{/if}
 		{/if}
 	</div>
 </div>
@@ -219,4 +381,120 @@
 
 	.result { font-size: var(--text-sm); margin-top: var(--space-md); color: var(--status-urgent); }
 	.result.success { color: var(--status-safe); }
+
+	.backup-actions {
+		display: flex;
+		gap: var(--space-sm);
+		margin-bottom: var(--space-lg);
+	}
+
+	.btn-secondary {
+		background: var(--bg-elevated);
+		color: var(--text-primary);
+		border: 1px solid var(--border-default);
+	}
+
+	.btn-secondary:hover { background: var(--bg-card); }
+
+	.upload-label { cursor: pointer; }
+
+	.backup-toggle {
+		margin-bottom: var(--space-lg);
+	}
+
+	.toggle-row {
+		display: flex;
+		align-items: center;
+		gap: var(--space-sm);
+		cursor: pointer;
+	}
+
+	.toggle-row input[type="checkbox"] {
+		width: 18px;
+		height: 18px;
+		accent-color: var(--accent);
+	}
+
+	.toggle-label {
+		font-size: var(--text-sm);
+		font-weight: var(--weight-medium);
+	}
+
+	.toggle-hint {
+		font-size: var(--text-xs);
+		color: var(--text-muted);
+		margin-top: var(--space-xs);
+		margin-left: 26px;
+	}
+
+	.backup-list-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: var(--space-sm);
+	}
+
+	.backup-list-title {
+		font-size: var(--text-xs);
+		font-weight: var(--weight-semibold);
+		color: var(--text-muted);
+		text-transform: uppercase;
+		letter-spacing: 0.1em;
+	}
+
+	.btn-link {
+		background: none;
+		border: none;
+		color: var(--accent);
+		font-size: var(--text-xs);
+		font-weight: var(--weight-medium);
+		cursor: pointer;
+		padding: 0;
+	}
+
+	.btn-link:hover { text-decoration: underline; }
+	.btn-link:disabled { opacity: 0.5; cursor: not-allowed; }
+
+	.backup-list {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-xs);
+	}
+
+	.backup-item {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: var(--space-sm) var(--space-md);
+		background: var(--bg-elevated);
+		border-radius: var(--radius-sm);
+		font-size: var(--text-sm);
+	}
+
+	.backup-info {
+		display: flex;
+		align-items: baseline;
+		gap: var(--space-sm);
+		min-width: 0;
+	}
+
+	.backup-name {
+		font-family: var(--font-mono);
+		font-size: var(--text-xs);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.backup-meta {
+		font-size: 10px;
+		color: var(--text-muted);
+		white-space: nowrap;
+	}
+
+	.no-backups {
+		font-size: var(--text-sm);
+		color: var(--text-muted);
+		font-style: italic;
+	}
 </style>

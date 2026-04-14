@@ -47,7 +47,7 @@ export interface GroupDeparture {
 	routeColor: string;
 }
 
-export const load: PageServerLoad = async ({ cookies }) => {
+export const load: PageServerLoad = async ({ url, cookies }) => {
 	try {
 		const feedCount = (getDb().prepare('SELECT COUNT(*) as c FROM feeds').get() as { c: number }).c;
 		if (feedCount === 0) {
@@ -60,8 +60,8 @@ export const load: PageServerLoad = async ({ cookies }) => {
 	const groups = listGroups();
 	const ungroupedProfiles = getUngroupedProfiles();
 
-	// Single cookie: "group:<id>" or "profile:<id>"
-	let activeView = cookies.get('activeView') || '';
+	// Read from URL param first, fall back to cookie for bookmarkability
+	let activeView = url.searchParams.get('view') || cookies.get('activeView') || '';
 	let activeGroupId: string | null = null;
 	let activeGroupName: string | null = null;
 	let profilesToRank: Profile[] = [];

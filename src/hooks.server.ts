@@ -1,6 +1,8 @@
 import type { Handle } from '@sveltejs/kit';
 import { getDb } from '$lib/db/connection';
 import { importAllFeeds, getLastImportTime } from '$lib/services/gtfs-import';
+import { isDailyBackupEnabled } from '$lib/services/settings';
+import { saveDailyBackup } from '$lib/services/backup';
 
 let schedulerStarted = false;
 
@@ -24,6 +26,16 @@ function startDailyScheduler() {
 		console.log(`[scheduler] Next GTFS import scheduled in ${Math.round(msUntilTarget / 60000)} minutes`);
 
 		setTimeout(async () => {
+			// Daily backup (runs before import, so backup reflects pre-import state)
+			if (isDailyBackupEnabled()) {
+				try {
+					const file = saveDailyBackup();
+					console.log(`[scheduler] Daily backup saved: ${file}`);
+				} catch (err) {
+					console.error('[scheduler] Daily backup failed:', err);
+				}
+			}
+
 			console.log('[scheduler] Running daily GTFS import...');
 			try {
 				await importAllFeeds();

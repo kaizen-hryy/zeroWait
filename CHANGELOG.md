@@ -11,7 +11,14 @@
 - Dropdown component: searchable filter mode with sticky search input and auto-focus
 - Timezone selector in Settings replaced with searchable custom Dropdown
 - Dropdown menu now scrollable (max-height: 240px) for long option lists
-- Fixed profile/group switching on homepage — was POSTing to nonexistent /api/view, now sets cookie directly
+- Fixed profile/group switching on homepage — now uses URL query param (?view=) instead of cookies
+
+### 3.1.1
+- Backup & restore: download/upload profile backups as JSON from Settings
+- Daily automatic backup option (runs at 4:00 AM, keeps last 7 days)
+- Server-side backup list with per-file restore and manual "Backup now" button
+- Pull-to-refresh on mobile: drag down from anywhere to refresh page data (GPU-accelerated, 60fps)
+- Fixed departure selection resetting on every auto-refresh — now preserves user's choice
 
 ## 3.0.0 — Reliability, Animations & UX
 

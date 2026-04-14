@@ -146,14 +146,21 @@
 
 	let importing = $state(false);
 	let importError = $state<string | null>(null);
-	let selectedMergedIndex = $state(0);
+	let selectedMergedIndex = $state(-1); // -1 = not yet initialized
 	let showAllDepartures = $state(false);
+	let prevActiveView = $state('');
 
-	// Default to first non-grace departure
+	// Auto-select first non-grace departure on load or view change;
+	// on auto-refreshes, keep user's selection (clamped to valid range)
 	$effect(() => {
-		if (data.mergedDepartures?.length) {
+		if (!data.mergedDepartures?.length) return;
+		const viewChanged = data.activeView !== prevActiveView;
+		if (selectedMergedIndex === -1 || viewChanged) {
 			const firstNonGrace = data.mergedDepartures.findIndex((d: any) => !d.departure.grace);
 			selectedMergedIndex = firstNonGrace >= 0 ? firstNonGrace : 0;
+			prevActiveView = data.activeView;
+		} else if (selectedMergedIndex >= data.mergedDepartures.length) {
+			selectedMergedIndex = data.mergedDepartures.length - 1;
 		}
 	});
 
@@ -261,8 +268,7 @@
 	}
 
 	function setActiveView(value: string) {
-		document.cookie = `activeView=${encodeURIComponent(value)};path=/;max-age=${60 * 60 * 24 * 365};samesite=lax`;
-		window.location.href = '/';
+		goto(`/?view=${encodeURIComponent(value)}`, { invalidateAll: true });
 	}
 
 	let viewOptions = $derived.by(() => {

@@ -31,5 +31,10 @@ export const ALLOWED_SETTINGS: Record<string, (v: string) => boolean> = {
 			Intl.DateTimeFormat(undefined, { timeZone: v });
 			return true;
 		} catch { return false; }
-	}
+	},
+	daily_backup_enabled: (v) => v === 'true' || v === 'false'
 };
+
+export function isDailyBackupEnabled(): boolean {
+	return getSetting('daily_backup_enabled') === 'true';
+}
