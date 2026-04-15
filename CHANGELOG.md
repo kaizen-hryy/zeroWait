@@ -20,6 +20,12 @@
 - Pull-to-refresh on mobile: drag down from anywhere to refresh page data (GPU-accelerated, 60fps)
 - Fixed departure selection resetting on every auto-refresh — now preserves user's choice
 
+### 3.1.2
+- Fixed hero card countdown numbers overlapping when switching between departures of different states
+- Removed cross-fade animation that caused ghost numbers during departure transitions
+- Countdown pop animation now only fires within the same departure (not on departure switch)
+- Smooth color transition on countdown number when status changes
+
 ## 3.0.0 — Reliability, Animations & UX
 
 ### 3.0.0

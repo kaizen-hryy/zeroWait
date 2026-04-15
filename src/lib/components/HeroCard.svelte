@@ -18,30 +18,20 @@
 
 	let hasEta = $derived(departure?.estimatedTime !== null && departure?.estimatedTime !== undefined);
 
-	// Animation: countdown pop on value change
+	// Animation: countdown pop on value change (only within same departure)
 	let prevCountdown = $state<string | number>('');
+	let prevTripForPop = $state('');
 	let popActive = $state(false);
 	$effect(() => {
 		const current = countdownDisplay;
-		if (current !== prevCountdown && prevCountdown !== '') {
+		const tripId = departure?.tripId ?? '';
+		// Only pop when the number changes within the same departure
+		if (current !== prevCountdown && prevCountdown !== '' && tripId === prevTripForPop) {
 			popActive = true;
 			setTimeout(() => { popActive = false; }, 150);
 		}
 		prevCountdown = current;
-	});
-
-	// Animation: cross-fade on departure change
-	let prevTripId = $state('');
-	let fadeActive = $state(false);
-	$effect(() => {
-		const tripId = departure?.tripId ?? '';
-		if (tripId !== prevTripId && prevTripId !== '') {
-			fadeActive = true;
-			requestAnimationFrame(() => {
-				requestAnimationFrame(() => { fadeActive = false; });
-			});
-		}
-		prevTripId = tripId;
+		prevTripForPop = tripId;
 	});
 
 	// Animation: vehicle approaching glow
@@ -120,7 +110,7 @@
 <div class="hero-card">
 	<div class="line-accent" style="background: #{routeColor}"></div>
 
-	<div class="card-content" class:fade-enter={fadeActive}>
+	<div class="card-content">
 		<!-- Profile name + route pill -->
 		<div class="row-between">
 			<span class="profile-name">{profileName}</span>
@@ -222,12 +212,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-lg);
-		transition: opacity 200ms ease, transform 200ms ease;
-	}
-
-	.card-content.fade-enter {
-		opacity: 0;
-		transform: translateY(4px);
 	}
 
 	.row-between {
@@ -253,6 +237,7 @@
 		font-weight: var(--weight-bold);
 		letter-spacing: -0.03em;
 		line-height: 1;
+		transition: color 0.3s ease;
 	}
 
 	.unit {
