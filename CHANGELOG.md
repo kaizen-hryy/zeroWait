@@ -1,5 +1,23 @@
 # Changelog
 
+## 4.0.0 — Stop Arrivals Widgets
+
+### 4.0.1
+- docker-compose now joins external `homelab_network` so reverse proxies can reach the container by name
+- Reachable at `zerowait.ka1zen.xyz` via the homelab Caddy
+
+### 4.0.0
+- Homepage pivot: per-stop arrivals widgets replace the merged "next leave-by" list
+- Each transit step in every active profile renders its own widget showing the most recently passed arrival plus upcoming ones
+- HeroCard "best time to leave" recommendation kept as the primary glance, widgets give the user real arrival data to react against
+- New global setting `stop_widget_arrival_count` (default 4, range 2–8) controls arrivals shown per widget
+- Past arrivals within a 15-minute window surface delayed-but-still-coming buses for stops with realtime
+- Extended `getNextDepartures()` with `beforeWindowMinutes` and `beforeLimit` parameters; `/api/departures` accepts the same query params
+- HeroCard now anchored to the top-ranked route's first future departure (the merged-list click-to-select flow is gone)
+- New `StopArrivalsWidget` component with live countdown, route stripe, profile chip, realtime status dot, and delay/early/on-time badges
+- Settings page: "Arrivals Per Stop Widget" input wired to the new setting
+- Smart auto-refresh now walks `data.stopWidgets[*].arrivals` to schedule the next invalidation
+
 ## 3.1.0 — Docker Fixes, Searchable Dropdowns & View Switching
 
 ### 3.1.0

@@ -2,6 +2,7 @@
 	import HeroCard from '$lib/components/HeroCard.svelte';
 	import JourneyTimeline from '$lib/components/JourneyTimeline.svelte';
 	import Dropdown from '$lib/components/Dropdown.svelte';
+	import StopArrivalsWidget from '$lib/components/StopArrivalsWidget.svelte';
 	import { onMount } from 'svelte';
 	import type { ActiveTrip, ActiveTripStep, Departure } from '$lib/types';
 	import type { StepInfo } from './+page.server';
@@ -52,19 +53,15 @@
 		const nowSec = getCurrentTimeSeconds();
 		let nextRefreshMs = 30_000; // default: 30s for realtime polling
 
-		// Find the soonest departure that will expire (departureTime passes now)
-		if (data.mergedDepartures?.length) {
-			for (const gd of data.mergedDepartures) {
-				const depSec = timeStrToSec(gd.departure.departureTime);
-				const msUntilExpiry = (depSec - nowSec) * 1000;
-				if (msUntilExpiry > 0 && msUntilExpiry < nextRefreshMs) {
-					nextRefreshMs = msUntilExpiry + 1000; // +1s buffer
-				}
-
-				// Also check grace expiry
-				if (gd.departure.grace && gd.departure.leaveByTime) {
-					const leaveSec = timeStrToSec(gd.departure.leaveByTime);
-					// Grace expires when departure itself passes (already handled above)
+		// Find the soonest future arrival across all stop widgets
+		if (data.stopWidgets?.length) {
+			for (const w of data.stopWidgets) {
+				for (const dep of w.arrivals) {
+					const depSec = timeStrToSec(dep.departureTime);
+					const msUntilExpiry = (depSec - nowSec) * 1000;
+					if (msUntilExpiry > 0 && msUntilExpiry < nextRefreshMs) {
+						nextRefreshMs = msUntilExpiry + 1000; // +1s buffer
+					}
 				}
 			}
 		}
@@ -146,28 +143,12 @@
 
 	let importing = $state(false);
 	let importError = $state<string | null>(null);
-	let selectedMergedIndex = $state(-1); // -1 = not yet initialized
-	let showAllDepartures = $state(false);
-	let prevActiveView = $state('');
 
-	// Auto-select first non-grace departure on load or view change;
-	// on auto-refreshes, keep user's selection (clamped to valid range)
-	$effect(() => {
-		if (!data.mergedDepartures?.length) return;
-		const viewChanged = data.activeView !== prevActiveView;
-		if (selectedMergedIndex === -1 || viewChanged) {
-			const firstNonGrace = data.mergedDepartures.findIndex((d: any) => !d.departure.grace);
-			selectedMergedIndex = firstNonGrace >= 0 ? firstNonGrace : 0;
-			prevActiveView = data.activeView;
-		} else if (selectedMergedIndex >= data.mergedDepartures.length) {
-			selectedMergedIndex = data.mergedDepartures.length - 1;
-		}
-	});
-
-	// Derive the selected route and departure from the merged selection
-	let selectedGroupDep = $derived(data.mergedDepartures?.[selectedMergedIndex] ?? null);
-	let selectedRoute = $derived(selectedGroupDep ? data.rankedRoutes[selectedGroupDep.routeIndex] : data.rankedRoutes?.[0] ?? null);
-	let selectedDep = $derived(selectedGroupDep?.departure ?? null);
+	// HeroCard is anchored to the first ranked route's first FUTURE departure.
+	let selectedRoute = $derived(data.rankedRoutes?.[0] ?? null);
+	let selectedDep = $derived(
+		selectedRoute?.departures?.find((d) => timeStrToSec(d.departureTime) > currentTimeSeconds) ?? null
+	);
 
 	function buildTripSteps(dep: Departure, stepInfos: StepInfo[]): ActiveTripStep[] {
 		const items: ActiveTripStep[] = [];
@@ -242,10 +223,6 @@
 		const ampm = h >= 12 ? 'PM' : 'AM';
 		const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
 		return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
-	}
-
-	function selectDeparture(index: number) {
-		selectedMergedIndex = index;
 	}
 
 	function startTripFor(route: typeof data.rankedRoutes[0], dep: Departure | null) {
@@ -380,50 +357,24 @@
 				{/if}
 			</div>
 
-			<!-- 2. Departures — max 5, show more -->
-			{#if data.mergedDepartures.length > 0}
+			<!-- 2. Stops — per-stop arrivals widgets -->
+			{#if data.stopWidgets.length > 0}
 				<section>
-					<h3 class="section-title">Departures</h3>
-					<div class="merged-dep-list">
-						{#each (showAllDepartures ? data.mergedDepartures : data.mergedDepartures.slice(0, 5)) as gd, i}
-							{@const isSelected = i === selectedMergedIndex}
-							{@const leaveMin = gd.departure.leaveByTime ? Math.floor((timeStrToSec(gd.departure.leaveByTime) - currentTimeSeconds) / 60) : null}
-							<button
-								class="merged-dep-item"
-								class:selected={isSelected}
-								class:grace={gd.departure.grace}
-								onclick={() => selectDeparture(i)}
-							>
-								<div class="mdep-color" style="background: #{gd.routeColor}"></div>
-								<div class="mdep-main">
-									<div class="mdep-top">
-										<span class="mdep-time">{gd.departure.departureTime.substring(0, 5)}</span>
-										<span class="mdep-profile">{gd.profileName}</span>
-									</div>
-									<div class="mdep-bottom">
-										<span class="mdep-leave">Leave by {gd.departure.leaveByTime?.substring(0, 5) ?? '--'}</span>
-										{#if gd.departure.grace}
-											<span class="mdep-grace">might make it</span>
-										{/if}
-									</div>
-								</div>
-								<div class="mdep-right">
-									{#if leaveMin !== null && leaveMin >= 0}
-										<span class="mdep-countdown" class:selected-text={isSelected}>{leaveMin} min</span>
-									{:else if gd.departure.grace && leaveMin !== null}
-										<span class="mdep-countdown grace-text">{Math.abs(leaveMin)} min ago</span>
-									{:else}
-										<span class="mdep-countdown">--</span>
-									{/if}
-								</div>
-							</button>
+					<h3 class="section-title">Stops</h3>
+					<div class="stop-widgets">
+						{#each data.stopWidgets as w (w.profileId + ':' + w.stepIndex)}
+							<StopArrivalsWidget
+								profileName={w.profileName}
+								stopCode={w.stopCode}
+								stopName={w.stopName}
+								routeLabel={w.routeLabel}
+								routeColor={w.routeColor}
+								headsign={w.headsign}
+								arrivals={w.arrivals}
+								currentTimeSec={currentTimeSeconds}
+							/>
 						{/each}
 					</div>
-					{#if data.mergedDepartures.length > 5}
-						<button class="show-more-btn" onclick={() => { showAllDepartures = !showAllDepartures; }}>
-							{showAllDepartures ? 'Show less' : `Show ${data.mergedDepartures.length - 5} more`}
-						</button>
-					{/if}
 				</section>
 			{/if}
 
@@ -572,111 +523,12 @@
 		margin-bottom: var(--space-lg);
 	}
 
-	/* Merged departure list */
-	.merged-dep-list {
+	/* Stop arrivals widgets */
+	.stop-widgets {
 		display: flex;
 		flex-direction: column;
-		gap: var(--space-sm);
-	}
-
-	.merged-dep-item {
-		display: flex;
-		align-items: center;
 		gap: var(--space-md);
-		padding: var(--space-md) var(--space-lg);
-		background: var(--bg-card);
-		border: 1px solid var(--border-default);
-		border-radius: var(--radius-md);
-		width: 100%;
-		text-align: left;
-		font-family: var(--font-sans);
-		color: var(--text-primary);
-		cursor: pointer;
-		transition: border-color var(--transition-fast), background var(--transition-fast);
 	}
-
-	.merged-dep-item:hover { border-color: var(--accent); }
-	.merged-dep-item.selected { border-color: var(--status-safe); background: var(--status-safe-bg); }
-	.merged-dep-item.grace { border-color: var(--status-grace); background: var(--status-grace-bg); border-style: dashed; }
-	.merged-dep-item.grace.selected { border-style: solid; border-width: 2px; }
-
-	.mdep-color {
-		width: 4px;
-		height: 36px;
-		border-radius: var(--radius-full);
-		flex-shrink: 0;
-	}
-
-	.mdep-main { flex: 1; min-width: 0; }
-
-	.mdep-top {
-		display: flex;
-		align-items: baseline;
-		gap: var(--space-sm);
-	}
-
-	.mdep-time {
-		font-family: var(--font-mono);
-		font-size: var(--text-base);
-		font-weight: var(--weight-semibold);
-	}
-
-	.mdep-profile {
-		font-size: var(--text-xs);
-		color: var(--text-muted);
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.mdep-bottom {
-		display: flex;
-		align-items: center;
-		gap: var(--space-sm);
-	}
-
-	.mdep-leave {
-		font-size: var(--text-xs);
-		color: var(--text-muted);
-	}
-
-	.mdep-grace {
-		font-size: 10px;
-		color: var(--status-grace);
-		font-style: italic;
-	}
-
-	.mdep-right {
-		text-align: right;
-		flex-shrink: 0;
-		display: flex;
-		flex-direction: column;
-		align-items: flex-end;
-		gap: 2px;
-	}
-
-	.mdep-countdown {
-		font-family: var(--font-mono);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-semibold);
-	}
-
-	.selected-text { color: var(--status-safe); }
-	.grace-text { color: var(--status-grace); }
-
-	.show-more-btn {
-		width: 100%;
-		margin-top: var(--space-sm);
-		padding: var(--space-sm);
-		background: none;
-		color: var(--accent);
-		font-size: var(--text-xs);
-		font-weight: var(--weight-medium);
-		border-radius: var(--radius-md);
-		transition: background var(--transition-fast);
-	}
-
-	.show-more-btn:hover { background: var(--accent-muted); }
 
 	/* Onboarding */
 	.onboarding {

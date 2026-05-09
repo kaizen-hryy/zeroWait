@@ -20,6 +20,8 @@
 	let importResult = $state<string | null>(null);
 	let defaultMaxWait = $state(5);
 	let maxWaitSaved = $state(false);
+	let arrivalCount = $state(4);
+	let arrivalCountSaved = $state(false);
 	let selectedTimezone = $state(data.currentTimezone);
 	let timezoneSaved = $state(false);
 
@@ -28,6 +30,7 @@
 			.then((r) => r.json())
 			.then((d) => {
 				defaultMaxWait = parseInt(d.default_max_wait_minutes ?? '5', 10);
+				arrivalCount = parseInt(d.stop_widget_arrival_count ?? '4', 10);
 				if (d.timezone) selectedTimezone = d.timezone;
 			});
 	});
@@ -40,6 +43,16 @@
 		});
 		maxWaitSaved = true;
 		setTimeout(() => { maxWaitSaved = false; }, 2000);
+	}
+
+	async function saveArrivalCount() {
+		await fetch('/api/settings', {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ stop_widget_arrival_count: String(arrivalCount) })
+		});
+		arrivalCountSaved = true;
+		setTimeout(() => { arrivalCountSaved = false; }, 2000);
 	}
 
 	async function saveTimezone() {
@@ -206,6 +219,22 @@
 			</div>
 			<button class="btn btn-primary btn-sm" onclick={saveMaxWait}>
 				{maxWaitSaved ? 'Saved!' : 'Save'}
+			</button>
+		</div>
+	</div>
+
+	<div class="section">
+		<h3 class="section-title">Arrivals Per Stop Widget</h3>
+		<p class="description">
+			How many arrivals to show on each stop widget on the homepage. Includes one just-passed arrival when available.
+		</p>
+		<div class="setting-row">
+			<div class="input-suffix">
+				<input type="number" bind:value={arrivalCount} min="2" max="8" step="1" />
+				<span class="suffix">min</span>
+			</div>
+			<button class="btn btn-primary btn-sm" onclick={saveArrivalCount}>
+				{arrivalCountSaved ? 'Saved!' : 'Save'}
 			</button>
 		</div>
 	</div>

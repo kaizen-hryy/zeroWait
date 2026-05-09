@@ -4,12 +4,15 @@ import { listGroups, getGroup, getUngroupedProfiles, listProfiles } from '$lib/s
 import { getNextDepartures } from '$lib/services/departures';
 import { optimizeJourney, type OptimizedCombo } from '$lib/services/optimizer';
 import { getDb } from '$lib/db/connection';
-import { getTimezone } from '$lib/services/settings';
+import { getTimezone, getStopWidgetArrivalCount } from '$lib/services/settings';
+
+const PAST_WINDOW_MINUTES = 15;
 
 export interface StepInfo {
 	type: 'walk' | 'transit';
 	description?: string;
 	minutes?: number;
+	feedId?: string;
 	stopCode?: string;
 	stopName?: string;
 	toStopCode?: string;
@@ -47,14 +50,28 @@ export interface GroupDeparture {
 	routeColor: string;
 }
 
+/** A per-stop arrivals widget, built from one transit step in a profile. */
+export interface StopWidgetData {
+	profileId: string;
+	profileName: string;
+	stepIndex: number;
+	feedId: string;
+	stopCode: string;
+	stopName: string;
+	routeLabel: string;
+	routeColor: string;
+	headsign: string | null;
+	arrivals: Departure[];
+}
+
 export const load: PageServerLoad = async ({ url, cookies }) => {
 	try {
 		const feedCount = (getDb().prepare('SELECT COUNT(*) as c FROM feeds').get() as { c: number }).c;
 		if (feedCount === 0) {
-			return { needsImport: true, groups: [], activeView: '', activeGroupName: null, rankedRoutes: [], mergedDepartures: [] as GroupDeparture[], ungroupedProfiles: [], timezone: getTimezone(), lastRefreshed: Date.now() };
+			return { needsImport: true, groups: [], activeView: '', activeGroupName: null, rankedRoutes: [], stopWidgets: [] as StopWidgetData[], ungroupedProfiles: [], timezone: getTimezone(), lastRefreshed: Date.now() };
 		}
 	} catch {
-		return { needsImport: true, groups: [], activeView: '', activeGroupName: null, rankedRoutes: [], mergedDepartures: [] as GroupDeparture[], ungroupedProfiles: [], timezone: getTimezone(), lastRefreshed: Date.now() };
+		return { needsImport: true, groups: [], activeView: '', activeGroupName: null, rankedRoutes: [], stopWidgets: [] as StopWidgetData[], ungroupedProfiles: [], timezone: getTimezone(), lastRefreshed: Date.now() };
 	}
 
 	const groups = listGroups();
@@ -97,8 +114,10 @@ export const load: PageServerLoad = async ({ url, cookies }) => {
 		}
 	}
 
+	const widgetCount = getStopWidgetArrivalCount();
+
 	// Compute route info for each profile
-	const routeInfos = await Promise.all(profilesToRank.map((p) => computeRouteInfo(p)));
+	const routeInfos = await Promise.all(profilesToRank.map((p) => computeRouteInfo(p, widgetCount)));
 	const validRoutes = routeInfos.filter((r): r is RouteInfo => r !== null);
 
 	// Rank by fastest estimated arrival (profiles with departures first, then by arrival time)
@@ -109,27 +128,28 @@ export const load: PageServerLoad = async ({ url, cookies }) => {
 		return a.estimatedArrivalSec - b.estimatedArrivalSec;
 	});
 
-	// Build merged departure list from all routes in the group
-	const mergedDepartures: GroupDeparture[] = [];
-	for (let ri = 0; ri < validRoutes.length; ri++) {
-		const route = validRoutes[ri];
-		for (let di = 0; di < route.departures.length; di++) {
-			mergedDepartures.push({
-				departure: route.departures[di],
-				routeIndex: ri,
-				depIndex: di,
+	// Build per-stop arrivals widgets — one per transit step in each profile.
+	const stopWidgets: StopWidgetData[] = [];
+	for (const route of validRoutes) {
+		route.steps.forEach((si, stepIndex) => {
+			if (si.type !== 'transit' || !si.departures) return;
+			// Cap to at most `widgetCount` rows total. The departures list from the
+			// service may be [past, future...]; keep the past row at index 0 if present.
+			const arrivals = si.departures.slice(0, widgetCount);
+			stopWidgets.push({
+				profileId: route.profileId,
 				profileName: route.profileName,
-				routeLabel: route.routeLabel,
-				routeColor: route.routeColor
+				stepIndex,
+				feedId: si.feedId ?? '',
+				stopCode: si.stopCode ?? '',
+				stopName: si.stopName ?? '',
+				routeLabel: si.routeLabel ?? '',
+				routeColor: si.routeColor ?? '6c8cff',
+				headsign: si.headsign ?? null,
+				arrivals
 			});
-		}
+		});
 	}
-	// Sort by leave-by time
-	mergedDepartures.sort((a, b) => {
-		const aTime = a.departure.leaveByTime ?? '99:99:99';
-		const bTime = b.departure.leaveByTime ?? '99:99:99';
-		return aTime.localeCompare(bTime);
-	});
 
 	return {
 		needsImport: false,
@@ -137,14 +157,14 @@ export const load: PageServerLoad = async ({ url, cookies }) => {
 		activeView,
 		activeGroupName,
 		rankedRoutes: validRoutes,
-		mergedDepartures,
+		stopWidgets,
 		ungroupedProfiles,
 		timezone: getTimezone(),
 		lastRefreshed: Date.now()
 	};
 };
 
-async function computeStepInfo(step: Step): Promise<StepInfo> {
+async function computeStepInfo(step: Step, widgetCount: number): Promise<StepInfo> {
 	if (step.type === 'walk') {
 		return { type: 'walk', description: step.description, minutes: step.minutes };
 	}
@@ -178,13 +198,18 @@ async function computeStepInfo(step: Step): Promise<StepInfo> {
 		directionId: transit.directionId,
 		travelMinutes: 0,
 		maxWaitMinutes: transit.maxWaitMinutes,
-		limit: 5,
-		includeRealtime: true
+		limit: widgetCount,
+		includeRealtime: true,
+		beforeWindowMinutes: PAST_WINDOW_MINUTES,
+		beforeLimit: 1
 	});
 
+	// rideMinutes derives from any single trip on this route — pick the first
+	// FUTURE departure so we don't anchor to a row the user already missed.
 	let rideMinutes: number | undefined;
-	if (transit.toStopId && departures.length > 0) {
-		const tripId = departures[0].tripId;
+	const firstFuture = departures.find((d) => !isPastDeparture(d));
+	if (transit.toStopId && firstFuture) {
+		const tripId = firstFuture.tripId;
 		const fromSt = db.prepare('SELECT departure_time FROM stop_times WHERE trip_id = ? AND feed_id = ? AND stop_id = ?')
 			.get(tripId, transit.feedId, transit.fromStopId) as { departure_time: string } | undefined;
 		const toSt = db.prepare('SELECT arrival_time FROM stop_times WHERE trip_id = ? AND feed_id = ? AND stop_id = ?')
@@ -196,24 +221,25 @@ async function computeStepInfo(step: Step): Promise<StepInfo> {
 
 	return {
 		type: 'transit',
+		feedId: transit.feedId,
 		stopCode: fromStop?.stop_code || fromStop?.stop_id || transit.fromStopId,
 		stopName: fromStop?.stop_name ?? '',
 		toStopCode: toStop?.stop_code || toStop?.stop_id || transit.toStopId,
 		toStopName: toStop?.stop_name ?? '',
 		routeLabel: route?.route_short_name || route?.route_long_name || transit.routeId,
 		routeColor: route?.route_color || '6c8cff',
-		headsign: departures[0]?.headsign ?? null,
+		headsign: firstFuture?.headsign ?? departures[0]?.headsign ?? null,
 		maxWaitMinutes: transit.maxWaitMinutes,
 		rideMinutes,
 		departures
 	};
 }
 
-async function computeRouteInfo(profile: Profile): Promise<RouteInfo | null> {
+async function computeRouteInfo(profile: Profile, widgetCount: number): Promise<RouteInfo | null> {
 	const steps = profile.steps;
 	if (steps.length === 0) return null;
 
-	const stepInfos = await Promise.all(steps.map(computeStepInfo));
+	const stepInfos = await Promise.all(steps.map((s) => computeStepInfo(s, widgetCount)));
 
 	const firstTransitIdx = steps.findIndex((s) => s.type === 'transit');
 	if (firstTransitIdx === -1) return null;
@@ -273,6 +299,21 @@ async function computeRouteInfo(profile: Profile): Promise<RouteInfo | null> {
 		isMultiTransit,
 		estimatedArrivalSec
 	};
+}
+
+function isPastDeparture(dep: Departure): boolean {
+	return timeToSec(dep.departureTime) <= currentTimeSec();
+}
+
+function currentTimeSec(): number {
+	const formatter = new Intl.DateTimeFormat('en-GB', {
+		timeZone: getTimezone(),
+		hour: '2-digit',
+		minute: '2-digit',
+		second: '2-digit',
+		hour12: false
+	});
+	return timeToSec(formatter.format(new Date()));
 }
 
 function timeToSec(time: string): number {

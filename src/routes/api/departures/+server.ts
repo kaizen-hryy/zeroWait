@@ -16,7 +16,9 @@ export const GET: RequestHandler = async ({ url }) => {
 	const travelMin = parseInt(url.searchParams.get('travelMin') ?? '0', 10);
 	const maxWaitMin = parseInt(url.searchParams.get('maxWaitMin') ?? '5', 10);
 	const limit = parseInt(url.searchParams.get('limit') ?? '5', 10);
-	if (isNaN(travelMin) || isNaN(maxWaitMin) || isNaN(limit)) {
+	const beforeWindowMin = parseInt(url.searchParams.get('beforeWindowMin') ?? '0', 10);
+	const beforeLimit = parseInt(url.searchParams.get('beforeLimit') ?? '1', 10);
+	if (isNaN(travelMin) || isNaN(maxWaitMin) || isNaN(limit) || isNaN(beforeWindowMin) || isNaN(beforeLimit)) {
 		error(400, 'Numeric params must be valid integers');
 	}
 
@@ -32,7 +34,9 @@ export const GET: RequestHandler = async ({ url }) => {
 		maxWaitMinutes: Math.max(1, maxWaitMin),
 		limit: Math.min(20, Math.max(1, limit)),
 		afterTime,
-		includeRealtime: realtime
+		includeRealtime: realtime,
+		beforeWindowMinutes: Math.min(60, Math.max(0, beforeWindowMin)),
+		beforeLimit: Math.min(5, Math.max(0, beforeLimit))
 	});
 
 	return json(departures);

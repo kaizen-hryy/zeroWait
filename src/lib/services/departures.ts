@@ -18,6 +18,11 @@ interface DepartureParams {
 	date?: Date;
 	afterTime?: string;
 	includeRealtime?: boolean;
+	/** When > 0, also return scheduled departures within the last N minutes
+	 *  (useful for stop-arrivals widgets that want to show the just-passed row). */
+	beforeWindowMinutes?: number;
+	/** Max past departures to return when beforeWindowMinutes > 0. Default 1. */
+	beforeLimit?: number;
 }
 
 /**
@@ -39,7 +44,9 @@ export async function getNextDepartures(params: DepartureParams): Promise<Depart
 		limit = 5,
 		date = new Date(),
 		afterTime,
-		includeRealtime = false
+		includeRealtime = false,
+		beforeWindowMinutes = 0,
+		beforeLimit = 1
 	} = params;
 
 	const effectiveMaxWait = maxWaitMinutes ?? getDefaultMaxWaitMinutes();
@@ -53,6 +60,13 @@ export async function getNextDepartures(params: DepartureParams): Promise<Depart
 	const currentTimeSeconds = timeToSeconds(currentTime);
 	const travelSeconds = travelMinutes * 60;
 	const maxWaitSeconds = effectiveMaxWait * 60;
+	const beforeWindowSeconds = Math.max(0, beforeWindowMinutes) * 60;
+
+	// When a past window is requested, query from earlier so backends include it.
+	const queryFromSeconds = currentTimeSeconds - beforeWindowSeconds;
+	const queryFromTime = beforeWindowSeconds > 0 && queryFromSeconds >= 0
+		? secondsToTime(queryFromSeconds)
+		: currentTime;
 
 	const fetchLimit = limit + 10;
 
@@ -61,31 +75,41 @@ export async function getNextDepartures(params: DepartureParams): Promise<Depart
 	if (config.schedulingModel === 'frequency') {
 		departures = getFrequencyDepartures({
 			stopId, feedId, routeId, directionId, serviceIds,
-			afterTime: currentTime,
+			afterTime: queryFromTime,
 			limit: fetchLimit
 		});
 	} else {
 		departures = getScheduledDepartures({
 			stopId, feedId, routeId, directionId, serviceIds,
-			afterTime: currentTime,
+			afterTime: queryFromTime,
 			limit: fetchLimit
 		});
 	}
 
-	// Compute leave-by and station wait
+	// Compute leave-by and station wait (future rows only; past rows are passthrough)
 	for (const dep of departures) {
 		const depSeconds = timeToSeconds(dep.departureTime);
+		if (depSeconds <= currentTimeSeconds) {
+			// Past row: leave leaveByTime null and stationWait null. UI treats it as "already passed".
+			continue;
+		}
 		const leaveBySeconds = depSeconds - travelSeconds - maxWaitSeconds;
 		dep.leaveByTime = leaveBySeconds >= 0 ? secondsToTime(leaveBySeconds) : null;
 		dep.stationWaitMinutes = effectiveMaxWait;
 	}
 
-	// Filter departures
-	departures = departures.filter((dep) => {
+	// Filter departures into past-window rows and future rows
+	const minSeconds = currentTimeSeconds - beforeWindowSeconds;
+	const past: Departure[] = [];
+	const future: Departure[] = [];
+	for (const dep of departures) {
 		const depSeconds = timeToSeconds(dep.departureTime);
 
-		// Vehicle already departed — gone
-		if (depSeconds <= currentTimeSeconds) return false;
+		// Past row — keep if within the requested window (otherwise drop)
+		if (depSeconds <= currentTimeSeconds) {
+			if (beforeWindowSeconds > 0 && depSeconds >= minSeconds) past.push(dep);
+			continue;
+		}
 
 		// If leaveByTime is null (negative), go straight to grace check
 		if (!dep.leaveByTime) {
@@ -93,9 +117,9 @@ export async function getNextDepartures(params: DepartureParams): Promise<Depart
 			if (arriveAtStation < depSeconds) {
 				dep.stationWaitMinutes = Math.round(Math.max(0, depSeconds - arriveAtStation) / 60);
 				dep.grace = true;
-				return true;
+				future.push(dep);
 			}
-			return false;
+			continue;
 		}
 
 		const leaveBySeconds = timeToSeconds(dep.leaveByTime);
@@ -104,7 +128,8 @@ export async function getNextDepartures(params: DepartureParams): Promise<Depart
 		if (leaveBySeconds >= currentTimeSeconds) {
 			const arriveAtStation = currentTimeSeconds + travelSeconds;
 			dep.stationWaitMinutes = Math.round(Math.max(0, depSeconds - arriveAtStation) / 60);
-			return true;
+			future.push(dep);
+			continue;
 		}
 
 		// Leave-by passed but can still physically reach station before departure
@@ -112,11 +137,15 @@ export async function getNextDepartures(params: DepartureParams): Promise<Depart
 		if (arriveAtStation < depSeconds) {
 			dep.stationWaitMinutes = Math.round(Math.max(0, depSeconds - arriveAtStation) / 60);
 			dep.grace = true;
-			return true;
+			future.push(dep);
 		}
+	}
 
-		return false;
-	}).slice(0, limit);
+	// Take the most recent past rows (closest to now first), then future rows in order.
+	const pastTrimmed = beforeWindowSeconds > 0
+		? past.slice(-Math.max(0, beforeLimit))
+		: [];
+	departures = [...pastTrimmed, ...future.slice(0, limit)];
 
 	// Realtime confirmation + ETA
 	if (includeRealtime && feedId !== 'rapid-rail-kl') {

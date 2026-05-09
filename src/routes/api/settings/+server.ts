@@ -9,6 +9,7 @@ export const GET: RequestHandler = async ({ url }) => {
 	}
 	return json({
 		default_max_wait_minutes: getSetting('default_max_wait_minutes') ?? '5',
+		stop_widget_arrival_count: getSetting('stop_widget_arrival_count') ?? '4',
 		timezone: getSetting('timezone') ?? Intl.DateTimeFormat().resolvedOptions().timeZone
 	});
 };

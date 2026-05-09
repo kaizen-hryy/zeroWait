@@ -18,6 +18,11 @@ export function getDefaultMaxWaitMinutes(): number {
 	return val ? parseInt(val, 10) : 5;
 }
 
+export function getStopWidgetArrivalCount(): number {
+	const val = getSetting('stop_widget_arrival_count');
+	return val ? parseInt(val, 10) : 4;
+}
+
 /** Get configured timezone, falling back to server's local timezone */
 export function getTimezone(): string {
 	return getSetting('timezone') ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -26,6 +31,7 @@ export function getTimezone(): string {
 /** Valid setting keys and their validators */
 export const ALLOWED_SETTINGS: Record<string, (v: string) => boolean> = {
 	default_max_wait_minutes: (v) => /^\d+$/.test(v) && +v >= 1 && +v <= 60,
+	stop_widget_arrival_count: (v) => /^\d+$/.test(v) && +v >= 2 && +v <= 8,
 	timezone: (v) => {
 		try {
 			Intl.DateTimeFormat(undefined, { timeZone: v });

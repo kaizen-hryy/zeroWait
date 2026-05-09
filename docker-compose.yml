@@ -13,3 +13,9 @@ services:
       - HOST=0.0.0.0
       # Optional: restrict GTFS import endpoint
       # - IMPORT_SECRET=your-secret-here
+    networks:
+      - homelab_network
+
+networks:
+  homelab_network:
+    external: true
